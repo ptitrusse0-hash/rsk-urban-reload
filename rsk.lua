@@ -6,11 +6,11 @@
 --                remote autodump filter, FOV always visible
 -- ============================================================
 
-local Players          = gameGetService(Players)
-local RunService       = gameGetService(RunService)
-local UserInputService = gameGetService(UserInputService)
-local TweenService     = gameGetService(TweenService)
-local CoreGui          = gameGetService(CoreGui)
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local CoreGui          = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera      = workspace.CurrentCamera
@@ -21,18 +21,18 @@ local CONFIG = {
     AimbotEnabled    = false,
     SilentAim        = false,
     MagicBullet      = false,
-    AutoFire         = false,       -- NOUVEAU autofire quand target lock
-    VelocityPred     = true,        -- NOUVEAU lead shot prediction
-    PredFactor       = 0.07,        -- NOUVEAU facteur de prediction
-    AimPart          = Head,
+    AutoFire         = false,
+    VelocityPred     = true,
+    PredFactor       = 0.07,
+    AimPart          = "Head",
     AimFOV           = 150,
     AimSmoothing     = 0.08,
     CeilingTime      = 0.08,
     VisibleOnly      = true,
     AimKey           = Enum.KeyCode.Q,
     AimHoldMode      = true,
-    ShowFOVAlways    = true,        -- NOUVEAU FOV circle toujours visible quand aimbot ON
-    CrosshairEnabled = true,        -- NOUVEAU crosshair
+    ShowFOVAlways    = true,
+    CrosshairEnabled = true,
 
     ESPEnabled       = false,
     SkeletonEnabled  = false,
@@ -58,63 +58,60 @@ local CONFIG = {
     DimColor         = Color3.fromRGB(120, 120, 130),
 
     DumpRemote       = false,
-    AutoDetectRemote = true,        -- NOUVEAU autodétection remote Fire
+    AutoDetectRemote = true,
     RemoteArgDir     = 2,
     RemoteArgPart    = 3,
-    RemoteNameFilter = Fire,
+    RemoteNameFilter = "Fire",
 }
 
-local aimActive    = false
-local lastShot     = 0
-local mouseDown    = false
-local autoFireConn = nil
-
--- velocity prediction stocke les positions précédentes
+local aimActive     = false
+local lastShot      = 0
+local mouseDown     = false
 local prevPositions = {}
 
 local sFireServer   = string.char(70,105,114,101,83,101,114,118,101,114)
 local sInvokeServer = string.char(73,110,118,111,107,101,83,101,114,118,101,114)
 
 local SKELETON_CONNECTIONS = {
-    {Head,UpperTorso},
-    {UpperTorso,LowerTorso},
-    {LowerTorso,HumanoidRootPart},
-    {LeftUpperArm,UpperTorso},
-    {LeftLowerArm,LeftUpperArm},
-    {LeftHand,LeftLowerArm},
-    {RightUpperArm,UpperTorso},
-    {RightLowerArm,RightUpperArm},
-    {RightHand,RightLowerArm},
-    {LeftUpperLeg,LowerTorso},
-    {LeftLowerLeg,LeftUpperLeg},
-    {LeftFoot,LeftLowerLeg},
-    {RightUpperLeg,LowerTorso},
-    {RightLowerLeg,RightUpperLeg},
-    {RightFoot,RightLowerLeg},
+    {"Head","UpperTorso"},
+    {"UpperTorso","LowerTorso"},
+    {"LowerTorso","HumanoidRootPart"},
+    {"LeftUpperArm","UpperTorso"},
+    {"LeftLowerArm","LeftUpperArm"},
+    {"LeftHand","LeftLowerArm"},
+    {"RightUpperArm","UpperTorso"},
+    {"RightLowerArm","RightUpperArm"},
+    {"RightHand","RightLowerArm"},
+    {"LeftUpperLeg","LowerTorso"},
+    {"LeftLowerLeg","LeftUpperLeg"},
+    {"LeftFoot","LeftLowerLeg"},
+    {"RightUpperLeg","LowerTorso"},
+    {"RightLowerLeg","RightUpperLeg"},
+    {"RightFoot","RightLowerLeg"},
 }
 
 local function worldToViewport(pos)
-    local vp, onScreen = CameraWorldToViewportPoint(pos)
+    local vp, onScreen = Camera:WorldToViewportPoint(pos)
     return Vector2.new(vp.X, vp.Y), onScreen, vp.Z
 end
 
 local function getPart(char, name)
-    return char and charFindFirstChild(name)
+    return char and char:FindFirstChild(name)
 end
 
 local function getHumanoid(char)
-    return char and charFindFirstChildOfClass(Humanoid)
+    return char and char:FindFirstChildOfClass("Humanoid")
 end
 
 local function isAlive(player)
     local char = player.Character
     local hum  = getHumanoid(char)
-    return char and hum and hum.Health  0
+    return char and hum and hum.Health > 0
 end
 
 local function getEnemies()
     local t = {}
-    for _, p in ipairs(PlayersGetPlayers()) do
+    for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and isAlive(p) then
             table.insert(t, p)
         end
@@ -125,24 +122,24 @@ end
 local function isVisible(part)
     if not CONFIG.VisibleOnly then return true end
     local char   = LocalPlayer.Character
-    local origin = char and charFindFirstChild(HumanoidRootPart)
+    local origin = char and char:FindFirstChild("HumanoidRootPart")
     if not origin then return true end
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
     local ignore = {}
-    for _, p in ipairs(PlayersGetPlayers()) do
+    for _, p in ipairs(Players:GetPlayers()) do
         if p.Character then table.insert(ignore, p.Character) end
     end
     params.FilterDescendantsInstances = ignore
-    local result = workspaceRaycast(origin.Position, part.Position - origin.Position, params)
+    local result = workspace:Raycast(origin.Position, part.Position - origin.Position, params)
     return result == nil
 end
 
 local function getDistance(player)
     local myChar = LocalPlayer.Character
-    local hrp    = myChar and myCharFindFirstChild(HumanoidRootPart)
+    local hrp    = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local eChar  = player.Character
-    local eHrp   = eChar and eCharFindFirstChild(HumanoidRootPart)
+    local eHrp   = eChar and eChar:FindFirstChild("HumanoidRootPart")
     if not hrp or not eHrp then return 0 end
     return math.floor((hrp.Position - eHrp.Position).Magnitude)
 end
@@ -151,55 +148,54 @@ local function getHealthPercent(player)
     local char = player.Character
     local hum  = getHumanoid(char)
     if not hum then return 0 end
-    return math.clamp(hum.Health  hum.MaxHealth, 0, 1)
+    return math.clamp(hum.Health / hum.MaxHealth, 0, 1)
 end
 
 local function lerpColor(a, b, t)
     return Color3.new(
-        a.R + (b.R - a.R)  t,
-        a.G + (b.G - a.G)  t,
-        a.B + (b.B - a.B)  t
+        a.R + (b.R - a.R) * t,
+        a.G + (b.G - a.G) * t,
+        a.B + (b.B - a.B) * t
     )
 end
 
 local function getFrenchTime()
-    local utcH = math.floor(os.time()  3600) % 24
+    local utcH = math.floor(os.time() / 3600) % 24
     local frH  = (utcH + 1) % 24
-    local m    = math.floor(os.time()  60) % 60
+    local m    = math.floor(os.time() / 60) % 60
     local s    = os.time() % 60
-    return string.format(%02d%02d%02d, frH, m, s)
+    return string.format("%02d:%02d:%02d", frH, m, s)
 end
 
--- NOUVEAU prediction de vélocité
 local function getPredictedPosition(part, player)
     if not CONFIG.VelocityPred then return part.Position end
-    local pid = tostring(player.UserId)
-    local now = tick()
+    local pid  = tostring(player.UserId)
+    local now  = tick()
     local prev = prevPositions[pid]
     prevPositions[pid] = {pos = part.Position, t = now}
     if not prev then return part.Position end
-    local dt  = now - prev.t
-    if dt = 0 or dt  0.5 then return part.Position end
-    local vel = (part.Position - prev.pos)  dt
-    return part.Position + vel  CONFIG.PredFactor
+    local dt = now - prev.t
+    if dt <= 0 or dt > 0.5 then return part.Position end
+    local vel = (part.Position - prev.pos) / dt
+    return part.Position + vel * CONFIG.PredFactor
 end
 
 local function getBestTarget()
     local myChar = LocalPlayer.Character
     if not myChar then return nil, nil end
-    local center   = Vector2.new(Camera.ViewportSize.X  2, Camera.ViewportSize.Y  2)
+    local center   = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     local best, bestPart, bestDist = nil, nil, CONFIG.AimFOV
 
     for _, enemy in ipairs(getEnemies()) do
         local char = enemy.Character
         if char then
-            local part = getPart(char, CONFIG.AimPart) or getPart(char, HumanoidRootPart)
+            local part = getPart(char, CONFIG.AimPart) or getPart(char, "HumanoidRootPart")
             if part then
                 local predictedPos = getPredictedPosition(part, enemy)
                 local sp, onScreen = worldToViewport(predictedPos)
                 if onScreen then
                     local dist = (sp - center).Magnitude
-                    if dist  bestDist then
+                    if dist < bestDist then
                         if not CONFIG.VisibleOnly or isVisible(part) then
                             bestDist = dist
                             best     = enemy
@@ -213,15 +209,14 @@ local function getBestTarget()
     return bestPart, best
 end
 
--- NOUVEAU AutoDetect remote — scan les remotes du workspaceréplicatedStorage
 local function autoDetectRemote()
     if not CONFIG.AutoDetectRemote then return end
-    local candidates = {Fire, Shoot, Attack, HitServer, BulletFire, ServerFire}
-    local rs = gameGetService(ReplicatedStorage)
+    local candidates = {"Fire","Shoot","Attack","HitServer","BulletFire","ServerFire"}
+    local rs = game:GetService("ReplicatedStorage")
     for _, name in ipairs(candidates) do
-        if rsFindFirstChild(name, true) then
+        if rs:FindFirstChild(name, true) then
             CONFIG.RemoteNameFilter = name
-            print([RSK AutoDetect] Remote trouvé  .. name)
+            print("[RSK AutoDetect] Remote trouvé : " .. name)
             return
         end
     end
@@ -231,14 +226,14 @@ task.defer(autoDetectRemote)
 
 if hookmetamethod then
     local oldNamecall
-    oldNamecall = hookmetamethod(game, __namecall, function(self, ...)
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
 
         if CONFIG.DumpRemote and (method == sFireServer or method == sInvokeServer) then
-            print(string.format([RSK DUMP] %s  method=%s, selfGetFullName(), method))
+            print(string.format("[RSK DUMP] %s  method=%s", self:GetFullName(), method))
             local args = {...}
             for i, v in ipairs(args) do
-                print(string.format(  arg%d  type=%-12s  val=%s, i, typeof(v), tostring(v)))
+                print(string.format("  arg%d  type=%-12s  val=%s", i, typeof(v), tostring(v)))
             end
             return oldNamecall(self, ...)
         end
@@ -247,15 +242,15 @@ if hookmetamethod then
             and CONFIG.SilentAim
             and CONFIG.AimbotEnabled
             and aimActive
-            and tostring(self.Name)find(CONFIG.RemoteNameFilter)
+            and tostring(self.Name):find(CONFIG.RemoteNameFilter)
         then
             local target, targetPlayer = getBestTarget()
             if target then
                 local predictedPos = targetPlayer and getPredictedPosition(target, targetPlayer) or target.Position
                 local args = table.pack(...)
                 local dir  = (predictedPos - Camera.CFrame.Position).Unit
-                args[CONFIG.RemoteArgDir]  = dir
-                if CONFIG.RemoteArgPart = args.n then
+                args[CONFIG.RemoteArgDir] = dir
+                if CONFIG.RemoteArgPart <= args.n then
                     args[CONFIG.RemoteArgPart] = target
                 end
                 return oldNamecall(self, table.unpack(args, 1, args.n))
@@ -265,60 +260,60 @@ if hookmetamethod then
         return oldNamecall(self, ...)
     end)
 else
-    warn([RSK] hookmetamethod indisponible — silent aim serveur désactivé, caméra-only actif)
+    warn("[RSK] hookmetamethod indisponible — silent aim serveur désactivé, caméra-only actif")
 end
 
 -- ============================================================
 -- OVERLAY
 -- ============================================================
-local overlayGui = Instance.new(ScreenGui)
-overlayGui.Name             = RSK_Overlay
-overlayGui.ResetOnSpawn     = false
-overlayGui.IgnoreGuiInset   = true
-overlayGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-overlayGui.Parent           = GuiParent
+local overlayGui = Instance.new("ScreenGui")
+overlayGui.Name           = "RSK_Overlay"
+overlayGui.ResetOnSpawn   = false
+overlayGui.IgnoreGuiInset = true
+overlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+overlayGui.Parent         = GuiParent
 
-local overlayFrame = Instance.new(Frame)
+local overlayFrame = Instance.new("Frame")
 overlayFrame.Size                   = UDim2.new(0, 240, 0, 38)
 overlayFrame.Position               = UDim2.new(0.5, -120, 0, 6)
 overlayFrame.BackgroundColor3       = Color3.fromRGB(14, 14, 18)
 overlayFrame.BackgroundTransparency = 0.15
 overlayFrame.BorderSizePixel        = 0
 overlayFrame.Parent                 = overlayGui
-Instance.new(UICorner, overlayFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", overlayFrame).CornerRadius = UDim.new(0, 8)
 
-local ovStroke = Instance.new(UIStroke)
+local ovStroke = Instance.new("UIStroke")
 ovStroke.Color        = Color3.fromRGB(255, 255, 255)
 ovStroke.Thickness    = 1
 ovStroke.Transparency = 0.7
 ovStroke.Parent       = overlayFrame
 
-local overlayLabel = Instance.new(TextLabel)
+local overlayLabel = Instance.new("TextLabel")
 overlayLabel.Size                   = UDim2.new(1, 0, 1, 0)
 overlayLabel.BackgroundTransparency = 1
 overlayLabel.Font                   = Enum.Font.GothamBold
 overlayLabel.TextSize               = 13
 overlayLabel.TextColor3             = Color3.fromRGB(255, 255, 255)
-overlayLabel.Text                   = RSK menu by dev RSK    000000
+overlayLabel.Text                   = "RSK menu by dev RSK"
 overlayLabel.Parent                 = overlayFrame
 
-RunService.RenderSteppedConnect(function()
+RunService.RenderStepped:Connect(function()
     overlayFrame.Visible = CONFIG.OverlayEnabled
-    overlayLabel.Text    = RSK menu v2.5 by dev RSK     .. getFrenchTime()
+    overlayLabel.Text    = "RSK menu v2.5 by dev RSK  " .. getFrenchTime()
 end)
 
 -- ============================================================
 -- MENU GUI
 -- ============================================================
-local MenuGui = Instance.new(ScreenGui)
-MenuGui.Name            = RSK_Menu
-MenuGui.ResetOnSpawn    = false
-MenuGui.IgnoreGuiInset  = true
-MenuGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-MenuGui.Enabled         = false
-MenuGui.Parent          = (gethui and gethui()) or CoreGui
+local MenuGui = Instance.new("ScreenGui")
+MenuGui.Name           = "RSK_Menu"
+MenuGui.ResetOnSpawn   = false
+MenuGui.IgnoreGuiInset = true
+MenuGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+MenuGui.Enabled        = false
+MenuGui.Parent         = (gethui and gethui()) or CoreGui
 
-local MainFrame = Instance.new(Frame)
+local MainFrame = Instance.new("Frame")
 MainFrame.Size             = UDim2.new(0, 620, 0, 520)
 MainFrame.Position         = UDim2.new(0.5, -310, 0.5, -260)
 MainFrame.BackgroundColor3 = CONFIG.BGColor
@@ -326,39 +321,39 @@ MainFrame.BorderSizePixel  = 0
 MainFrame.Active           = true
 MainFrame.Draggable        = true
 MainFrame.Parent           = MenuGui
-Instance.new(UICorner, MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 
-local mainStroke = Instance.new(UIStroke)
+local mainStroke = Instance.new("UIStroke")
 mainStroke.Color        = Color3.fromRGB(255, 255, 255)
 mainStroke.Thickness    = 1.2
 mainStroke.Transparency = 0.6
 mainStroke.Parent       = MainFrame
 
-local TitleBar = Instance.new(Frame)
+local TitleBar = Instance.new("Frame")
 TitleBar.Size             = UDim2.new(1, 0, 0, 46)
 TitleBar.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
 TitleBar.BorderSizePixel  = 0
 TitleBar.Parent           = MainFrame
-Instance.new(UICorner, TitleBar).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 
-local LogoBadge = Instance.new(Frame)
+local LogoBadge = Instance.new("Frame")
 LogoBadge.Size             = UDim2.new(0, 34, 0, 34)
 LogoBadge.Position         = UDim2.new(0, 8, 0, 6)
 LogoBadge.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 LogoBadge.BorderSizePixel  = 0
 LogoBadge.Parent           = TitleBar
-Instance.new(UICorner, LogoBadge).CornerRadius = UDim.new(0, 6)
+Instance.new("UICorner", LogoBadge).CornerRadius = UDim.new(0, 6)
 
-local LogoText = Instance.new(TextLabel)
+local LogoText = Instance.new("TextLabel")
 LogoText.Size                   = UDim2.new(1, 0, 1, 0)
 LogoText.BackgroundTransparency = 1
 LogoText.Font                   = Enum.Font.GothamBold
 LogoText.TextSize               = 13
 LogoText.TextColor3             = Color3.fromRGB(14, 14, 18)
-LogoText.Text                   = RK
+LogoText.Text                   = "RK"
 LogoText.Parent                 = LogoBadge
 
-local TitleLabel = Instance.new(TextLabel)
+local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size                   = UDim2.new(1, -60, 1, 0)
 TitleLabel.Position               = UDim2.new(0, 50, 0, 0)
 TitleLabel.BackgroundTransparency = 1
@@ -366,10 +361,10 @@ TitleLabel.Font                   = Enum.Font.GothamBold
 TitleLabel.TextSize               = 14
 TitleLabel.TextColor3             = CONFIG.TextColor
 TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
-TitleLabel.Text                   = RSK Menu  ·  Urban Reload
+TitleLabel.Text                   = "RSK Menu  ·  Urban Reload"
 TitleLabel.Parent                 = TitleBar
 
-local SubLabel = Instance.new(TextLabel)
+local SubLabel = Instance.new("TextLabel")
 SubLabel.Size                   = UDim2.new(1, -60, 0, 14)
 SubLabel.Position               = UDim2.new(0, 50, 0, 28)
 SubLabel.BackgroundTransparency = 1
@@ -377,10 +372,10 @@ SubLabel.Font                   = Enum.Font.Gotham
 SubLabel.TextSize               = 11
 SubLabel.TextColor3             = CONFIG.DimColor
 SubLabel.TextXAlignment         = Enum.TextXAlignment.Left
-SubLabel.Text                   = Aim · ESP · Silent Aim · Velocity Pred · AutoFire · Urban Reload v2.5
+SubLabel.Text                   = "Aim · ESP · Silent Aim · Velocity Pred · AutoFire · v2.5"
 SubLabel.Parent                 = TitleBar
 
-local Sep = Instance.new(Frame)
+local Sep = Instance.new("Frame")
 Sep.Size                   = UDim2.new(1, 0, 0, 1)
 Sep.Position               = UDim2.new(0, 0, 0, 46)
 Sep.BackgroundColor3       = Color3.fromRGB(255, 255, 255)
@@ -388,26 +383,26 @@ Sep.BackgroundTransparency = 0.85
 Sep.BorderSizePixel        = 0
 Sep.Parent                 = MainFrame
 
-local TABS      = {Combat, ESP, Bypass, Misc}
+local TABS      = {"Combat", "ESP", "Bypass", "Misc"}
 local TabBtns   = {}
 local TabFrames = {}
-local activeTab = Combat
+local activeTab = "Combat"
 
-local TabBar = Instance.new(Frame)
+local TabBar = Instance.new("Frame")
 TabBar.Size             = UDim2.new(0, 120, 1, -48)
 TabBar.Position         = UDim2.new(0, 0, 0, 48)
 TabBar.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
 TabBar.BorderSizePixel  = 0
 TabBar.Parent           = MainFrame
 
-local tabSepV = Instance.new(Frame)
+local tabSepV = Instance.new("Frame")
 tabSepV.Size                   = UDim2.new(0, 1, 1, 0)
 tabSepV.BackgroundColor3       = Color3.fromRGB(255, 255, 255)
 tabSepV.BackgroundTransparency = 0.85
 tabSepV.BorderSizePixel        = 0
 tabSepV.Parent                 = TabBar
 
-local ContentArea = Instance.new(Frame)
+local ContentArea = Instance.new("Frame")
 ContentArea.Size                   = UDim2.new(1, -122, 1, -48)
 ContentArea.Position               = UDim2.new(0, 122, 0, 48)
 ContentArea.BackgroundTransparency = 1
@@ -415,19 +410,19 @@ ContentArea.BorderSizePixel        = 0
 ContentArea.Parent                 = MainFrame
 
 local function newTabFrame(name)
-    local f = Instance.new(ScrollingFrame)
-    f.Size                   = UDim2.new(1, 0, 1, 0)
+    local f = Instance.new("ScrollingFrame")
+    f.Size                 = UDim2.new(1, 0, 1, 0)
     f.BackgroundTransparency = 1
-    f.BorderSizePixel        = 0
-    f.ScrollBarThickness     = 3
-    f.ScrollBarImageColor3   = Color3.fromRGB(255, 255, 255)
-    f.Visible                = (name == activeTab)
-    f.Parent                 = ContentArea
-    local layout = Instance.new(UIListLayout)
-    layout.Padding    = UDim.new(0, 6)
-    layout.SortOrder  = Enum.SortOrder.LayoutOrder
-    layout.Parent     = f
-    local pad = Instance.new(UIPadding)
+    f.BorderSizePixel      = 0
+    f.ScrollBarThickness   = 3
+    f.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+    f.Visible              = (name == activeTab)
+    f.Parent               = ContentArea
+    local layout = Instance.new("UIListLayout")
+    layout.Padding   = UDim.new(0, 6)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent    = f
+    local pad = Instance.new("UIPadding")
     pad.PaddingTop   = UDim.new(0, 10)
     pad.PaddingLeft  = UDim.new(0, 12)
     pad.PaddingRight = UDim.new(0, 12)
@@ -450,9 +445,9 @@ local function switchTab(name)
 end
 
 for i, name in ipairs(TABS) do
-    local btn = Instance.new(TextButton)
+    local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(1, -10, 0, 34)
-    btn.Position         = UDim2.new(0, 5, 0, 8 + (i-1)40)
+    btn.Position         = UDim2.new(0, 5, 0, 8 + (i-1) * 40)
     btn.BackgroundColor3 = (name == activeTab) and Color3.fromRGB(255,255,255) or Color3.fromRGB(14,14,18)
     btn.BorderSizePixel  = 0
     btn.Font             = Enum.Font.GothamBold
@@ -461,34 +456,34 @@ for i, name in ipairs(TABS) do
     btn.Text             = name
     btn.AutoButtonColor  = false
     btn.Parent           = TabBar
-    Instance.new(UICorner, btn).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
     TabBtns[name] = btn
-    btn.MouseButton1ClickConnect(function() switchTab(name) end)
+    btn.MouseButton1Click:Connect(function() switchTab(name) end)
     newTabFrame(name)
 end
 
 local function makeSection(parent, text, order)
-    local lbl = Instance.new(TextLabel)
+    local lbl = Instance.new("TextLabel")
     lbl.Size                   = UDim2.new(1, -4, 0, 20)
     lbl.BackgroundTransparency = 1
     lbl.Font                   = Enum.Font.GothamBold
     lbl.TextSize               = 11
     lbl.TextColor3             = Color3.fromRGB(255, 255, 255)
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
-    lbl.Text                   =    .. string.upper(text)
+    lbl.Text                   = "  " .. string.upper(text)
     lbl.LayoutOrder            = order
     lbl.Parent                 = parent
 end
 
 local function makeToggle(parent, label, key, order, onChanged)
-    local row = Instance.new(Frame)
+    local row = Instance.new("Frame")
     row.Size             = UDim2.new(1, -4, 0, 32)
     row.BackgroundColor3 = CONFIG.PanelColor
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
     row.Parent           = parent
-    Instance.new(UICorner, row).CornerRadius = UDim.new(0, 6)
-    local lbl = Instance.new(TextLabel)
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    local lbl = Instance.new("TextLabel")
     lbl.Size                   = UDim2.new(1, -56, 1, 0)
     lbl.Position               = UDim2.new(0, 12, 0, 0)
     lbl.BackgroundTransparency = 1
@@ -498,49 +493,49 @@ local function makeToggle(parent, label, key, order, onChanged)
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
     lbl.Text                   = label
     lbl.Parent                 = row
-    local bg = Instance.new(Frame)
+    local bg = Instance.new("Frame")
     bg.Size             = UDim2.new(0, 36, 0, 18)
     bg.Position         = UDim2.new(1, -46, 0.5, -9)
     bg.BackgroundColor3 = CONFIG[key] and Color3.fromRGB(255,255,255) or Color3.fromRGB(50,50,60)
     bg.BorderSizePixel  = 0
     bg.Parent           = row
-    Instance.new(UICorner, bg).CornerRadius = UDim.new(1, 0)
-    local knob = Instance.new(Frame)
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
+    local knob = Instance.new("Frame")
     knob.Size             = UDim2.new(0, 14, 0, 14)
     knob.Position         = CONFIG[key] and UDim2.new(1,-16,0.5,-7) or UDim2.new(0,2,0.5,-7)
     knob.BackgroundColor3 = CONFIG[key] and Color3.fromRGB(14,14,18) or Color3.fromRGB(200,200,210)
     knob.BorderSizePixel  = 0
     knob.Parent           = bg
-    Instance.new(UICorner, knob).CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
     local function refresh()
         local on = CONFIG[key]
-        TweenServiceCreate(bg,   TweenInfo.new(0.12), {BackgroundColor3 = on and Color3.fromRGB(255,255,255) or Color3.fromRGB(50,50,60)})Play()
-        TweenServiceCreate(knob, TweenInfo.new(0.12), {
+        TweenService:Create(bg,   TweenInfo.new(0.12), {BackgroundColor3 = on and Color3.fromRGB(255,255,255) or Color3.fromRGB(50,50,60)}):Play()
+        TweenService:Create(knob, TweenInfo.new(0.12), {
             Position         = on and UDim2.new(1,-16,0.5,-7) or UDim2.new(0,2,0.5,-7),
             BackgroundColor3 = on and Color3.fromRGB(14,14,18) or Color3.fromRGB(200,200,210)
-        })Play()
+        }):Play()
         if onChanged then onChanged(on) end
     end
-    local btn = Instance.new(TextButton)
+    local btn = Instance.new("TextButton")
     btn.Size                   = UDim2.new(1,0,1,0)
     btn.BackgroundTransparency = 1
-    btn.Text                   = 
+    btn.Text                   = ""
     btn.Parent                 = row
-    btn.MouseButton1ClickConnect(function()
+    btn.MouseButton1Click:Connect(function()
         CONFIG[key] = not CONFIG[key]
         refresh()
     end)
 end
 
 local function makeSlider(parent, label, key, minV, maxV, order, fmt)
-    local row = Instance.new(Frame)
+    local row = Instance.new("Frame")
     row.Size             = UDim2.new(1, -4, 0, 48)
     row.BackgroundColor3 = CONFIG.PanelColor
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
     row.Parent           = parent
-    Instance.new(UICorner, row).CornerRadius = UDim.new(0, 6)
-    local lbl = Instance.new(TextLabel)
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    local lbl = Instance.new("TextLabel")
     lbl.Size                   = UDim2.new(0.7, 0, 0, 18)
     lbl.Position               = UDim2.new(0, 12, 0, 4)
     lbl.BackgroundTransparency = 1
@@ -550,7 +545,7 @@ local function makeSlider(parent, label, key, minV, maxV, order, fmt)
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
     lbl.Text                   = label
     lbl.Parent                 = row
-    local valLbl = Instance.new(TextLabel)
+    local valLbl = Instance.new("TextLabel")
     valLbl.Size                   = UDim2.new(0.3, -12, 0, 18)
     valLbl.Position               = UDim2.new(0.7, 0, 0, 4)
     valLbl.BackgroundTransparency = 1
@@ -559,52 +554,52 @@ local function makeSlider(parent, label, key, minV, maxV, order, fmt)
     valLbl.TextColor3             = Color3.fromRGB(255,255,255)
     valLbl.TextXAlignment         = Enum.TextXAlignment.Right
     valLbl.Parent                 = row
-    local track = Instance.new(Frame)
+    local track = Instance.new("Frame")
     track.Size             = UDim2.new(1, -24, 0, 4)
     track.Position         = UDim2.new(0, 12, 0, 34)
     track.BackgroundColor3 = Color3.fromRGB(50,50,60)
     track.BorderSizePixel  = 0
     track.Parent           = row
-    Instance.new(UICorner, track).CornerRadius = UDim.new(1, 0)
-    local fill = Instance.new(Frame)
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+    local fill = Instance.new("Frame")
     fill.BackgroundColor3 = Color3.fromRGB(255,255,255)
     fill.BorderSizePixel  = 0
     fill.Parent           = track
-    Instance.new(UICorner, fill).CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
     local function setVal(v)
         v           = math.clamp(v, minV, maxV)
         CONFIG[key] = v
-        local ratio = (v - minV)  (maxV - minV)
+        local ratio = (v - minV) / (maxV - minV)
         fill.Size   = UDim2.new(ratio, 0, 1, 0)
-        valLbl.Text = fmt and string.format(fmt, v) or string.format(%.2f, v)
+        valLbl.Text = fmt and string.format(fmt, v) or string.format("%.2f", v)
     end
     setVal(CONFIG[key])
     local dragging = false
-    track.InputBeganConnect(function(inp)
+    track.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
     end)
-    UserInputService.InputEndedConnect(function(inp)
+    UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
     end)
-    UserInputService.InputChangedConnect(function(inp)
+    UserInputService.InputChanged:Connect(function(inp)
         if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
             local abs   = track.AbsolutePosition
             local size  = track.AbsoluteSize
-            local ratio = math.clamp((inp.Position.X - abs.X)  size.X, 0, 1)
-            setVal(minV + (maxV - minV)  ratio)
+            local ratio = math.clamp((inp.Position.X - abs.X) / size.X, 0, 1)
+            setVal(minV + (maxV - minV) * ratio)
         end
     end)
 end
 
 local function makeKeybind(parent, label, key, order)
-    local row = Instance.new(Frame)
+    local row = Instance.new("Frame")
     row.Size             = UDim2.new(1, -4, 0, 32)
     row.BackgroundColor3 = CONFIG.PanelColor
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
     row.Parent           = parent
-    Instance.new(UICorner, row).CornerRadius = UDim.new(0, 6)
-    local lbl = Instance.new(TextLabel)
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    local lbl = Instance.new("TextLabel")
     lbl.Size                   = UDim2.new(0.6, 0, 1, 0)
     lbl.Position               = UDim2.new(0, 12, 0, 0)
     lbl.BackgroundTransparency = 1
@@ -614,7 +609,7 @@ local function makeKeybind(parent, label, key, order)
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
     lbl.Text                   = label
     lbl.Parent                 = row
-    local keyBtn = Instance.new(TextButton)
+    local keyBtn = Instance.new("TextButton")
     keyBtn.Size             = UDim2.new(0, 80, 0, 22)
     keyBtn.Position         = UDim2.new(1, -88, 0.5, -11)
     keyBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
@@ -622,20 +617,20 @@ local function makeKeybind(parent, label, key, order)
     keyBtn.Font             = Enum.Font.GothamBold
     keyBtn.TextSize         = 11
     keyBtn.TextColor3       = Color3.fromRGB(255,255,255)
-    keyBtn.Text             = tostring(CONFIG[key])gsub(Enum.KeyCode.,)
+    keyBtn.Text             = tostring(CONFIG[key]):gsub("Enum.KeyCode.","")
     keyBtn.AutoButtonColor  = false
     keyBtn.Parent           = row
-    Instance.new(UICorner, keyBtn).CornerRadius = UDim.new(0, 4)
+    Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0, 4)
     local listening = false
-    keyBtn.MouseButton1ClickConnect(function()
-        listening = true
-        keyBtn.Text       = ...
+    keyBtn.MouseButton1Click:Connect(function()
+        listening         = true
+        keyBtn.Text       = "..."
         keyBtn.TextColor3 = Color3.fromRGB(255,255,100)
     end)
-    UserInputService.InputBeganConnect(function(inp)
+    UserInputService.InputBegan:Connect(function(inp)
         if listening and inp.UserInputType == Enum.UserInputType.Keyboard then
             CONFIG[key]       = inp.KeyCode
-            keyBtn.Text       = tostring(inp.KeyCode)gsub(Enum.KeyCode.,)
+            keyBtn.Text       = tostring(inp.KeyCode):gsub("Enum.KeyCode.","")
             keyBtn.TextColor3 = Color3.fromRGB(255,255,255)
             listening         = false
         end
@@ -643,14 +638,14 @@ local function makeKeybind(parent, label, key, order)
 end
 
 local function makeIntInput(parent, label, key, order)
-    local row = Instance.new(Frame)
+    local row = Instance.new("Frame")
     row.Size             = UDim2.new(1, -4, 0, 32)
     row.BackgroundColor3 = CONFIG.PanelColor
     row.BorderSizePixel  = 0
     row.LayoutOrder      = order
     row.Parent           = parent
-    Instance.new(UICorner, row).CornerRadius = UDim.new(0, 6)
-    local lbl = Instance.new(TextLabel)
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+    local lbl = Instance.new("TextLabel")
     lbl.Size                   = UDim2.new(0.7, 0, 1, 0)
     lbl.Position               = UDim2.new(0, 12, 0, 0)
     lbl.BackgroundTransparency = 1
@@ -660,7 +655,7 @@ local function makeIntInput(parent, label, key, order)
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
     lbl.Text                   = label
     lbl.Parent                 = row
-    local box = Instance.new(TextBox)
+    local box = Instance.new("TextBox")
     box.Size             = UDim2.new(0, 50, 0, 22)
     box.Position         = UDim2.new(1, -58, 0.5, -11)
     box.BackgroundColor3 = Color3.fromRGB(40,40,50)
@@ -671,10 +666,10 @@ local function makeIntInput(parent, label, key, order)
     box.Text             = tostring(CONFIG[key])
     box.ClearTextOnFocus = false
     box.Parent           = row
-    Instance.new(UICorner, box).CornerRadius = UDim.new(0, 4)
-    box.FocusLostConnect(function()
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    box.FocusLost:Connect(function()
         local v = tonumber(box.Text)
-        if v and v = 1 and v = 10 then
+        if v and v >= 1 and v <= 10 then
             CONFIG[key] = math.floor(v)
         end
         box.Text = tostring(CONFIG[key])
@@ -684,48 +679,48 @@ end
 -- ============================================================
 -- TAB COMBAT
 -- ============================================================
-local cF = TabFrames[Combat]
-makeSection(cF,  Aimbot,                              1)
-makeToggle(cF,   Enable Aimbot,      AimbotEnabled, 2)
-makeToggle(cF,   Hold  Toggle,      AimHoldMode,   3)
-makeKeybind(cF,  Aim Key,            AimKey,        4)
-makeToggle(cF,   Silent Aim (cam),   SilentAim,     5)
-makeToggle(cF,   Magic Bullet,       MagicBullet,   6)
-makeToggle(cF,   Auto Fire,          AutoFire,      7)  -- NOUVEAU
-makeToggle(cF,   Velocity Prediction,VelocityPred,  8)  -- NOUVEAU
-makeToggle(cF,   Visible Only,       VisibleOnly,   9)
-makeToggle(cF,   FOV toujours visible,ShowFOVAlways,10) -- NOUVEAU
-makeToggle(cF,   Crosshair,          CrosshairEnabled,11) -- NOUVEAU
-makeSection(cF,  Réglages,                            12)
-makeSlider(cF,   FOV (px),           AimFOV,      10, 500, 13, %d)
-makeSlider(cF,   Smoothing,          AimSmoothing, 0, 1,   14, %.2f)
-makeSlider(cF,   Ceiling Time (s),   CeilingTime,  0, 0.5, 15, %.3f)
-makeSlider(cF,   Pred Factor,        PredFactor, 0, 0.3,   16, %.3f) -- NOUVEAU
+local cF = TabFrames["Combat"]
+makeSection(cF, "Aimbot",                               1)
+makeToggle(cF,  "Enable Aimbot",       "AimbotEnabled", 2)
+makeToggle(cF,  "Hold / Toggle",       "AimHoldMode",   3)
+makeKeybind(cF, "Aim Key",             "AimKey",        4)
+makeToggle(cF,  "Silent Aim (cam)",    "SilentAim",     5)
+makeToggle(cF,  "Magic Bullet",        "MagicBullet",   6)
+makeToggle(cF,  "Auto Fire",           "AutoFire",      7)
+makeToggle(cF,  "Velocity Prediction", "VelocityPred",  8)
+makeToggle(cF,  "Visible Only",        "VisibleOnly",   9)
+makeToggle(cF,  "FOV toujours visible","ShowFOVAlways", 10)
+makeToggle(cF,  "Crosshair",           "CrosshairEnabled", 11)
+makeSection(cF, "Réglages",                              12)
+makeSlider(cF,  "FOV (px)",            "AimFOV",      10, 500, 13, "%d")
+makeSlider(cF,  "Smoothing",           "AimSmoothing", 0,   1, 14, "%.2f")
+makeSlider(cF,  "Ceiling Time (s)",    "CeilingTime",  0, 0.5, 15, "%.3f")
+makeSlider(cF,  "Pred Factor",         "PredFactor",   0, 0.3, 16, "%.3f")
 
 -- ============================================================
 -- TAB ESP
 -- ============================================================
-local eF = TabFrames[ESP]
-makeSection(eF,  Affichage,                             1)
-makeToggle(eF,   Enable ESP,         ESPEnabled,      2)
-makeToggle(eF,   Skeleton,           SkeletonEnabled, 3)
-makeToggle(eF,   Nametag,            NametagEnabled,  4)
-makeToggle(eF,   Box ESP,            BoxEnabled,      5)
-makeToggle(eF,   Barre de vie,       HealthBarEnabled,6)
-makeToggle(eF,   Distance (studs),   DistanceEnabled, 7)
+local eF = TabFrames["ESP"]
+makeSection(eF, "Affichage",                              1)
+makeToggle(eF,  "Enable ESP",          "ESPEnabled",      2)
+makeToggle(eF,  "Skeleton",            "SkeletonEnabled", 3)
+makeToggle(eF,  "Nametag",             "NametagEnabled",  4)
+makeToggle(eF,  "Box ESP",             "BoxEnabled",      5)
+makeToggle(eF,  "Barre de vie",        "HealthBarEnabled",6)
+makeToggle(eF,  "Distance (studs)",    "DistanceEnabled", 7)
 
 -- ============================================================
 -- TAB BYPASS
 -- ============================================================
-local bF = TabFrames[Bypass]
-makeSection(bF, Remote Hook,                               1)
-makeToggle(bF,  Silent Aim Serveur,   SilentAim,        2)
-makeToggle(bF,  Auto Detect Remote,   AutoDetectRemote, 3) -- NOUVEAU
-makeToggle(bF,  Dump Remote (console),DumpRemote,        4)
-makeIntInput(bF,Arg direction (index),RemoteArgDir,      5)
-makeIntInput(bF,Arg hitPart  (index), RemoteArgPart,     6)
+local bF = TabFrames["Bypass"]
+makeSection(bF,   "Remote Hook",                                1)
+makeToggle(bF,    "Silent Aim Serveur",    "SilentAim",        2)
+makeToggle(bF,    "Auto Detect Remote",    "AutoDetectRemote", 3)
+makeToggle(bF,    "Dump Remote (console)", "DumpRemote",       4)
+makeIntInput(bF,  "Arg direction (index)", "RemoteArgDir",     5)
+makeIntInput(bF,  "Arg hitPart  (index)",  "RemoteArgPart",    6)
 
-local infoHook = Instance.new(TextLabel)
+local infoHook = Instance.new("TextLabel")
 infoHook.Size                   = UDim2.new(1, -4, 0, 110)
 infoHook.BackgroundColor3       = CONFIG.PanelColor
 infoHook.BorderSizePixel        = 0
@@ -734,20 +729,21 @@ infoHook.TextSize               = 11
 infoHook.TextColor3             = CONFIG.DimColor
 infoHook.TextWrapped            = true
 infoHook.TextXAlignment         = Enum.TextXAlignment.Left
-infoHook.Text = AUTO DETECT tente de trouver la remote automatiquementnnMANUELn1. Active Dump Remoten2. Tire 2-3 balles - F9 consolen3. Note les indexn4. Desactive Dump, active Silent Aim Serveur
+infoHook.Text                   = "AUTO DETECT tente de trouver la remote automatiquement\n\nMANUEL\n1. Active Dump Remote\n2. Tire 2-3 balles → F9 console\n3. Note les index\n4. Desactive Dump, active Silent Aim Serveur"
 infoHook.LayoutOrder            = 7
 infoHook.Parent                 = bF
-Instance.new(UICorner, infoHook).CornerRadius = UDim.new(0, 6)
-local ihp = Instance.new(UIPadding, infoHook)
-ihp.PaddingLeft = UDim.new(0,10); ihp.PaddingTop = UDim.new(0,8)
+Instance.new("UICorner", infoHook).CornerRadius = UDim.new(0, 6)
+local ihp = Instance.new("UIPadding", infoHook)
+ihp.PaddingLeft = UDim.new(0,10)
+ihp.PaddingTop  = UDim.new(0,8)
 
 -- ============================================================
 -- TAB MISC
 -- ============================================================
-local mF = TabFrames[Misc]
-makeSection(mF,  Overlay,                             1)
-makeToggle(mF,   Afficher overlay,   OverlayEnabled,2)
-local info = Instance.new(TextLabel)
+local mF = TabFrames["Misc"]
+makeSection(mF, "Overlay",                               1)
+makeToggle(mF,  "Afficher overlay",  "OverlayEnabled",  2)
+local info = Instance.new("TextLabel")
 info.Size                   = UDim2.new(1, -4, 0, 80)
 info.BackgroundColor3       = CONFIG.PanelColor
 info.BorderSizePixel        = 0
@@ -756,17 +752,18 @@ info.TextSize               = 11
 info.TextColor3             = CONFIG.DimColor
 info.TextWrapped            = true
 info.TextXAlignment         = Enum.TextXAlignment.Left
-info.Text = RSK Menu v2.5 - Urban ReloadnDev RSKnINSERT  menunAim Key (defaut Q)  holdtogglenVelocity Prediction lead shot autonAutoFire fire auto sur target lock
+info.Text                   = "RSK Menu v2.5 - Urban Reload\nDev RSK\nINSERT → menu\nAim Key (defaut Q) → hold/toggle\nVelocity Prediction lead shot auto\nAutoFire fire auto sur target lock"
 info.LayoutOrder            = 3
 info.Parent                 = mF
-Instance.new(UICorner, info).CornerRadius = UDim.new(0, 6)
-local ip = Instance.new(UIPadding, info)
-ip.PaddingLeft = UDim.new(0,10); ip.PaddingTop = UDim.new(0,8)
+Instance.new("UICorner", info).CornerRadius = UDim.new(0, 6)
+local ip = Instance.new("UIPadding", info)
+ip.PaddingLeft = UDim.new(0,10)
+ip.PaddingTop  = UDim.new(0,8)
 
 -- ============================================================
 -- INPUT
 -- ============================================================
-UserInputService.InputBeganConnect(function(inp, gpe)
+UserInputService.InputBegan:Connect(function(inp, gpe)
     if inp.KeyCode == CONFIG.MenuKey then
         CONFIG.MenuOpen = not CONFIG.MenuOpen
         MenuGui.Enabled = CONFIG.MenuOpen
@@ -785,7 +782,7 @@ UserInputService.InputBeganConnect(function(inp, gpe)
     end
 end)
 
-UserInputService.InputEndedConnect(function(inp)
+UserInputService.InputEnded:Connect(function(inp)
     if inp.KeyCode == CONFIG.AimKey and CONFIG.AimHoldMode then
         aimActive = false
     end
@@ -801,13 +798,12 @@ local espData = {}
 
 local function removeESP(player)
     if not espData[player] then return end
-    for _, obj in ipairs(espData[player].lines  or {}) do pcall(function() objRemove() end) end
-    for _, obj in ipairs(espData[player].box    or {}) do pcall(function() objRemove() end) end
-    for _, obj in ipairs(espData[player].hpBars or {}) do pcall(function() objRemove() end) end
-    if espData[player].nametag then pcall(function() espData[player].nametagRemove() end) end
-    if espData[player].distLbl then pcall(function() espData[player].distLblRemove() end) end
+    for _, obj in ipairs(espData[player].lines  or {}) do pcall(function() obj:Remove() end) end
+    for _, obj in ipairs(espData[player].box    or {}) do pcall(function() obj:Remove() end) end
+    for _, obj in ipairs(espData[player].hpBars or {}) do pcall(function() obj:Remove() end) end
+    if espData[player].nametag then pcall(function() espData[player].nametag:Remove() end) end
+    if espData[player].distLbl then pcall(function() espData[player].distLbl:Remove() end) end
     espData[player] = nil
-    -- cleanup velocity prediction data
     prevPositions[tostring(player.UserId)] = nil
 end
 
@@ -815,7 +811,7 @@ local function initESP(player)
     if espData[player] then return end
     local lines = {}
     for _ = 1, #SKELETON_CONNECTIONS do
-        local l = Drawing.new(Line)
+        local l = Drawing.new("Line")
         l.Visible   = false
         l.Color     = CONFIG.SkeletonColor
         l.Thickness = CONFIG.ESPThickness
@@ -823,28 +819,28 @@ local function initESP(player)
     end
     local box = {}
     for _ = 1, 4 do
-        local l = Drawing.new(Line)
+        local l = Drawing.new("Line")
         l.Visible   = false
         l.Color     = CONFIG.BoxColor
         l.Thickness = 1.2
         table.insert(box, l)
     end
-    local hpBack = Drawing.new(Line)
+    local hpBack = Drawing.new("Line")
     hpBack.Visible   = false
     hpBack.Color     = Color3.fromRGB(30,30,30)
     hpBack.Thickness = 4
-    local hpFill = Drawing.new(Line)
+    local hpFill = Drawing.new("Line")
     hpFill.Visible   = false
     hpFill.Color     = Color3.fromRGB(80,255,120)
     hpFill.Thickness = 3
-    local nametag = Drawing.new(Text)
+    local nametag = Drawing.new("Text")
     nametag.Visible = false
     nametag.Color   = CONFIG.NametagColor
     nametag.Size    = 13
     nametag.Outline = true
     nametag.Center  = true
     nametag.Font    = Drawing.Fonts.UI
-    local distLbl = Drawing.new(Text)
+    local distLbl = Drawing.new("Text")
     distLbl.Visible = false
     distLbl.Color   = Color3.fromRGB(200,200,200)
     distLbl.Size    = 12
@@ -865,8 +861,9 @@ local function updateESP(player)
     local hum  = getHumanoid(char)
     local d    = espData[player]
     if not char or not hum or not d then return end
-    local alive = hum.Health  0
+    local alive = hum.Health > 0
     local on    = CONFIG.ESPEnabled and alive
+
     for i, conn in ipairs(SKELETON_CONNECTIONS) do
         local pA   = getPart(char, conn[1])
         local pB   = getPart(char, conn[2])
@@ -885,40 +882,43 @@ local function updateESP(player)
             line.Visible = false
         end
     end
-    local headPart = getPart(char, Head)
-    local footPart = getPart(char, LeftFoot) or getPart(char, RightFoot)
-    local hrp      = getPart(char, HumanoidRootPart)
+
+    local headPart = getPart(char, "Head")
+    local footPart = getPart(char, "LeftFoot") or getPart(char, "RightFoot")
+    local hrp      = getPart(char, "HumanoidRootPart")
     local topSP, onTop, botSP, onBot
     if headPart and footPart then
         topSP, onTop = worldToViewport(headPart.Position + Vector3.new(0, 0.6, 0))
-        botSP, onBot = worldToViewport(footPart.Position  - Vector3.new(0, 0.2, 0))
+        botSP, onBot = worldToViewport(footPart.Position - Vector3.new(0, 0.2, 0))
     end
+
     if CONFIG.BoxEnabled and on and onTop and onBot then
         local h  = math.abs(topSP.Y - botSP.Y)
-        local w  = h  0.55
+        local w  = h * 0.55
         local cx = topSP.X
-        local tl = Vector2.new(cx - w2, topSP.Y)
-        local tr = Vector2.new(cx + w2, topSP.Y)
-        local bl = Vector2.new(cx - w2, botSP.Y)
-        local br = Vector2.new(cx + w2, botSP.Y)
+        local tl = Vector2.new(cx - w/2, topSP.Y)
+        local tr = Vector2.new(cx + w/2, topSP.Y)
+        local bl = Vector2.new(cx - w/2, botSP.Y)
+        local br = Vector2.new(cx + w/2, botSP.Y)
         local pts = {tl,tr, tr,br, br,bl, bl,tl}
         for i2 = 1, 4 do
-            d.box[i2].From    = pts[i22-1]
-            d.box[i2].To      = pts[i22]
+            d.box[i2].From    = pts[i2*2-1]
+            d.box[i2].To      = pts[i2*2]
             d.box[i2].Visible = true
         end
     else
         for _, l in ipairs(d.box) do l.Visible = false end
     end
+
     local hpBack = d.hpBars[1]
     local hpFill = d.hpBars[2]
     if CONFIG.HealthBarEnabled and on and onTop and onBot then
         local h     = math.abs(botSP.Y - topSP.Y)
-        local w     = h  0.55
+        local w     = h * 0.55
         local cx    = topSP.X
-        local xLeft = cx - w2 - 6
+        local xLeft = cx - w/2 - 6
         local pct   = getHealthPercent(player)
-        local barH  = h  pct
+        local barH  = h * pct
         hpBack.From    = Vector2.new(xLeft, topSP.Y)
         hpBack.To      = Vector2.new(xLeft, botSP.Y)
         hpBack.Visible = true
@@ -930,11 +930,12 @@ local function updateESP(player)
         hpBack.Visible = false
         hpFill.Visible = false
     end
+
     if CONFIG.NametagEnabled and on and headPart then
         local sp, okS = worldToViewport(headPart.Position + Vector3.new(0, 2.4, 0))
         if okS then
             d.nametag.Position = sp
-            d.nametag.Text     = string.format(%s  [%d HP], player.DisplayName, math.floor(hum.Health))
+            d.nametag.Text     = string.format("%s  [%d HP]", player.DisplayName, math.floor(hum.Health))
             d.nametag.Visible  = true
         else
             d.nametag.Visible = false
@@ -942,12 +943,13 @@ local function updateESP(player)
     else
         d.nametag.Visible = false
     end
+
     if CONFIG.DistanceEnabled and on and hrp then
         local dist   = getDistance(player)
         local sp, ok = worldToViewport(hrp.Position + Vector3.new(0, -2.0, 0))
         if ok then
             d.distLbl.Position = sp
-            d.distLbl.Text     = dist ..  m
+            d.distLbl.Text     = dist .. " m"
             d.distLbl.Visible  = true
         else
             d.distLbl.Visible = false
@@ -960,48 +962,44 @@ end
 -- ============================================================
 -- DRAWINGS FOV + CROSSHAIR
 -- ============================================================
-local fovCircle = Drawing.new(Circle)
+local fovCircle = Drawing.new("Circle")
 fovCircle.Visible   = false
 fovCircle.Radius    = 150
 fovCircle.Color     = Color3.fromRGB(255, 255, 255)
 fovCircle.Thickness = 1
 fovCircle.Filled    = false
 
--- NOUVEAU crosshair
-local crossH = Drawing.new(Line)
+local crossH = Drawing.new("Line")
 crossH.Visible   = false
 crossH.Color     = Color3.fromRGB(255, 255, 255)
 crossH.Thickness = 1
 
-local crossV = Drawing.new(Line)
+local crossV = Drawing.new("Line")
 crossV.Visible   = false
 crossV.Color     = Color3.fromRGB(255, 255, 255)
 crossV.Thickness = 1
 
 -- ============================================================
--- AUTOFIRE simule click gauche via mouse1click
+-- AUTOFIRE
 -- ============================================================
 local function doAutoFire()
     if not (CONFIG.AutoFire and CONFIG.AimbotEnabled and aimActive) then return end
     local target = getBestTarget()
     if not target then return end
-    -- simule le clic pour déclencher le hookmetamethod
     mouse1click()
 end
 
 -- ============================================================
 -- RENDER LOOP
 -- ============================================================
-RunService.RenderSteppedConnect(function(dt)
-    local center = Vector2.new(Camera.ViewportSize.X  2, Camera.ViewportSize.Y  2)
+RunService.RenderStepped:Connect(function(dt)
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
-    -- FOV circle visible si aimbot ON + (aimActive OU ShowFOVAlways)
     local showFov = CONFIG.AimbotEnabled and (aimActive or CONFIG.ShowFOVAlways)
     fovCircle.Visible  = showFov
     fovCircle.Radius   = CONFIG.AimFOV
     fovCircle.Position = center
 
-    -- CROSSHAIR
     if CONFIG.CrosshairEnabled then
         local sz = 10
         crossH.From    = Vector2.new(center.X - sz, center.Y)
@@ -1015,8 +1013,7 @@ RunService.RenderSteppedConnect(function(dt)
         crossV.Visible = false
     end
 
-    -- ESP update
-    for _, p in ipairs(PlayersGetPlayers()) do
+    for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             initESP(p)
             updateESP(p)
@@ -1028,35 +1025,32 @@ RunService.RenderSteppedConnect(function(dt)
     local target, targetPlayer = getBestTarget()
     if not target then return end
 
-    -- position prédite pour la caméra
-    local aimPos = targetPlayer and getPredictedPosition(target, targetPlayer) or target.Position
-
-    local smooth  = math.clamp(1 - CONFIG.AimSmoothing, 0.01, 1.0)
-    local factor  = math.clamp(smooth  (dt  60), 0.01, 1.0)
+    local aimPos   = targetPlayer and getPredictedPosition(target, targetPlayer) or target.Position
+    local smooth   = math.clamp(1 - CONFIG.AimSmoothing, 0.01, 1.0)
+    local factor   = math.clamp(smooth * (dt * 60), 0.01, 1.0)
     local targetCF = CFrame.lookAt(Camera.CFrame.Position, aimPos)
-    Camera.CFrame  = Camera.CFrameLerp(targetCF, factor)
+    Camera.CFrame  = Camera.CFrame:Lerp(targetCF, factor)
 
     if CONFIG.MagicBullet and mouseDown then
         local now = tick()
-        if (now - lastShot) = CONFIG.CeilingTime then
+        if (now - lastShot) >= CONFIG.CeilingTime then
             lastShot      = now
             Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, aimPos)
         end
     end
 
-    -- AUTOFIRE
     if CONFIG.AutoFire then
         local now = tick()
-        if (now - lastShot) = CONFIG.CeilingTime then
+        if (now - lastShot) >= CONFIG.CeilingTime then
             lastShot = now
             pcall(doAutoFire)
         end
     end
 end)
 
-Players.PlayerRemovingConnect(removeESP)
+Players.PlayerRemoving:Connect(removeESP)
 
-print(string.format([RSK v2.5] Urban Reload — INSERT=menu  AimKey=%s  hookmetamethod=%s  VelPred=ON  AutoFire=OFF,
-    tostring(CONFIG.AimKey)gsub(Enum.KeyCode.,),
+print(string.format("[RSK v2.5] Urban Reload — INSERT=menu  AimKey=%s  hookmetamethod=%s  VelPred=ON  AutoFire=OFF",
+    tostring(CONFIG.AimKey):gsub("Enum.KeyCode.",""),
     tostring(hookmetamethod ~= nil)
 ))
